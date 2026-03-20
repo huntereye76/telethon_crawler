@@ -1,4 +1,5 @@
 import os
+import re
 import time
 import random
 import psycopg2
