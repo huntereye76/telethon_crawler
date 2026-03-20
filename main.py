@@ -17,6 +17,9 @@ api_hash = os.getenv("API_HASH")
 session_string = os.getenv("SESSION_STRING")
 DB_URL = os.getenv("DB_URL")
 
+print("Session length:", len(session_string))
+print("Contains newline:", "\n" in session_string)
+
 # ==============================
 # FILE SETUP
 # ==============================
