@@ -2,6 +2,7 @@ import os
 import re
 import time
 import random
+import json
 import psycopg2
 from psycopg2.extras import execute_values
 from telethon.sync import TelegramClient
@@ -11,38 +12,61 @@ from telethon.errors import FloodWaitError
 from keywords import KEYWORDS
 
 # ==============================
-# LOAD FROM ENV (SECRETS)
+# CONFIG (TOGGLES)
+# ==============================
+SAVE_TO_FILE = True
+SAVE_TO_DB = True
+
+# ==============================
+# LOAD ENV
 # ==============================
 api_id = int(os.getenv("API_ID"))
 api_hash = os.getenv("API_HASH")
 session_string = os.getenv("SESSION_STRING")
-# 🔥 SUPER CLEAN (handles all hidden chars)
 session_string = re.sub(r"\s+", "", session_string)
 DB_URL = os.getenv("DB_URL")
 
-print("Session length:", len(session_string))
-print("Contains newline:", "\n" in session_string)
+# ==============================
+# PROGRESS FILE
+# ==============================
+PROGRESS_FILE = "progress.json"
+
+if os.path.exists(PROGRESS_FILE):
+    with open(PROGRESS_FILE, "r") as f:
+        progress = json.load(f)
+        start_index = progress.get("index", 0)
+else:
+    start_index = 0
+
+def save_progress(index):
+    with open(PROGRESS_FILE, "w") as f:
+        json.dump({"index": index}, f)
+
+print(f"🔁 Resuming from index: {start_index}")
 
 # ==============================
 # FILE SETUP
 # ==============================
 OUTPUT_FILE = "tglink.txt"
+existing_links = set()
 
-if not os.path.exists(OUTPUT_FILE):
-    open(OUTPUT_FILE, "w").close()
+if SAVE_TO_FILE:
+    if not os.path.exists(OUTPUT_FILE):
+        open(OUTPUT_FILE, "w").close()
 
-with open(OUTPUT_FILE, "r", encoding="utf-8") as f:
-    existing_links = set(line.strip() for line in f if line.strip())
+    with open(OUTPUT_FILE, "r", encoding="utf-8") as f:
+        existing_links = set(line.strip() for line in f if line.strip())
 
 # ==============================
 # DB CONNECT
 # ==============================
-conn = psycopg2.connect(DB_URL)
-cur = conn.cursor()
-print("✅ DB Connected")
+if SAVE_TO_DB:
+    conn = psycopg2.connect(DB_URL)
+    cur = conn.cursor()
+    print("✅ DB Connected")
 
 # ==============================
-# TELETHON CLIENT (STRING SESSION)
+# TELEGRAM CLIENT
 # ==============================
 client = TelegramClient(StringSession(session_string), api_id, api_hash)
 client.start()
@@ -55,7 +79,6 @@ MIN_DELAY = 2.5
 MAX_DELAY = 5.5
 
 batch_data = []
-total_inserted = 0
 
 # ==============================
 # MAIN LOOP
@@ -63,10 +86,13 @@ total_inserted = 0
 while True:
 
     print("\n🚀 New Cycle Started")
-    random.shuffle(KEYWORDS)
 
-    for keyword in KEYWORDS:
-        print(f"\n🔍 Searching: {keyword}")
+    # ⚠️ IMPORTANT: Don't shuffle if using progress
+    # random.shuffle(KEYWORDS)
+
+    for i in range(start_index, len(KEYWORDS)):
+        keyword = KEYWORDS[i]
+        print(f"\n🔍 [{i}] Searching: {keyword}")
 
         try:
             result = client(SearchRequest(q=keyword, limit=50))
@@ -80,9 +106,9 @@ while True:
                 link = f"https://t.me/{username}"
 
                 # ==============================
-                # FILE SAVE
+                # SAVE TO FILE
                 # ==============================
-                if link not in existing_links:
+                if SAVE_TO_FILE and link not in existing_links:
                     with open(OUTPUT_FILE, "a", encoding="utf-8") as f:
                         f.write(link + "\n")
 
@@ -90,28 +116,33 @@ while True:
                     print("📁 Saved:", link)
 
                 # ==============================
-                # DB BATCH
+                # SAVE TO DB
                 # ==============================
-                batch_data.append((link, f"search:{keyword}"))
+                if SAVE_TO_DB:
+                    batch_data.append((link, f"search:{keyword}"))
 
-                if len(batch_data) >= BATCH_SIZE:
-                    execute_values(
-                        cur,
-                        """
-                        INSERT INTO crawl_queue (url, status, discovered_from)
-                        VALUES %s
-                        ON CONFLICT (url) DO NOTHING
-                        """,
-                        [(url, 'pending', src) for url, src in batch_data]
-                    )
-                    conn.commit()
-
-                    print(f"🚀 Batch inserted {len(batch_data)}")
-                    batch_data.clear()
+                    if len(batch_data) >= BATCH_SIZE:
+                        execute_values(
+                            cur,
+                            """
+                            INSERT INTO crawl_queue (url, status, discovered_from)
+                            VALUES %s
+                            ON CONFLICT (url) DO NOTHING
+                            """,
+                            [(url, 'pending', src) for url, src in batch_data]
+                        )
+                        conn.commit()
+                        print(f"🚀 Batch inserted {len(batch_data)}")
+                        batch_data.clear()
 
         except FloodWaitError as e:
             print(f"⏳ FloodWait: sleeping {e.seconds}s")
             time.sleep(e.seconds)
+
+        # ==============================
+        # SAVE PROGRESS
+        # ==============================
+        save_progress(i)
 
         # ==============================
         # HUMAN DELAY
@@ -121,9 +152,9 @@ while True:
         time.sleep(delay)
 
     # ==============================
-    # FINAL SAVE
+    # FINAL DB SAVE
     # ==============================
-    if batch_data:
+    if SAVE_TO_DB and batch_data:
         execute_values(
             cur,
             """
@@ -136,6 +167,12 @@ while True:
         conn.commit()
         print(f"🚀 Final batch inserted {len(batch_data)}")
         batch_data.clear()
+
+    # ==============================
+    # RESET PROGRESS AFTER FULL CYCLE
+    # ==============================
+    save_progress(0)
+    start_index = 0
 
     # ==============================
     # AUTO REST
