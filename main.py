@@ -83,7 +83,8 @@ batch_data = []
 # ==============================
 # MAIN LOOP
 # ==============================
-while True:
+# while True:
+for _ in range(1):  # run only one cycle
 
     print("\n🚀 New Cycle Started")
 
