@@ -15,8 +15,8 @@ from keywords import KEYWORDS
 api_id = int(os.getenv("API_ID"))
 api_hash = os.getenv("API_HASH")
 session_string = os.getenv("SESSION_STRING")
-# FIX: remove unwanted line breaks
-session_string = session_string.replace("\n", "").replace("\r", "").strip()
+# 🔥 SUPER CLEAN (handles all hidden chars)
+session_string = re.sub(r"\s+", "", session_string)
 DB_URL = os.getenv("DB_URL")
 
 print("Session length:", len(session_string))
