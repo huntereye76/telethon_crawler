@@ -36,7 +36,7 @@ BASE_KEYWORDS = [
 "dating group", "dating india", "single boys",
 "single girls", "relationship talk",
 "love chat", "couple chat", "flirting group",
-"dating chat", "online dating",
+"dating chat", "online dating", "real meet", "sex", "paid girls", "online bhabhi",
 
 # =========================
 # 😂 FUN / MEMES
